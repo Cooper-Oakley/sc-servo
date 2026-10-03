@@ -41,6 +41,7 @@ int  currentRead[253];
 s16  posRead[253];
 s16  modeRead[253];
 s16  temperRead[253];
+bool feedbackValid[253] = {};
 
 // []: the num of the active servo.
 // use listID[activeNumInList] to get the ID of the active servo.
@@ -70,7 +71,9 @@ void getFeedBack(byte servoID){
     currentRead[servoID] = st.ReadCurrent(-1);
     temperRead[servoID] = st.ReadTemper(-1);
     modeRead[servoID] = st.ReadMode(servoID);
+    feedbackValid[servoID] = true;
   }else{
+    feedbackValid[servoID] = false;
     // Serial.println("FeedBack err");
   }
 }

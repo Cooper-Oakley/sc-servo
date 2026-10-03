@@ -103,8 +103,14 @@ void activeCtrl(int cmdInput){
     case 9:servotoSet += 1;if(servotoSet > 250){servotoSet = 0;}break;
     case 10:servotoSet -= 1;if(servotoSet < 0){servotoSet = 0;}break;
     case 11:setMiddle(listID[activeNumInList]);break;
-    case 12:setMode(listID[activeNumInList], 0);break;
-    case 13:setMode(listID[activeNumInList], 3);break;
+    case 12:
+      setMode(listID[activeNumInList], 0);
+      modeRead[listID[activeNumInList]] = 0;
+      break;
+    case 13:
+      setMode(listID[activeNumInList], 3);
+      modeRead[listID[activeNumInList]] = 3;
+      break;
     case 14:SERIAL_FORWARDING = true;break;
     case 15:SERIAL_FORWARDING = false;break;
     case 16:setID(listID[activeNumInList], servotoSet);break;
@@ -180,11 +186,117 @@ void handleSTS() {
   server.send(200, "text/plane", stsValue); //Send ADC value only to client ajax request
 }
 
+bool parseUnsignedArgument(const String &argument, long maxValue, long &value) {
+  if (argument.length() == 0) {
+    return false;
+  }
+
+  value = 0;
+  for (unsigned int i = 0; i < argument.length(); i++) {
+    char digit = argument.charAt(i);
+    if (digit < '0' || digit > '9') {
+      return false;
+    }
+    int numericDigit = digit - '0';
+    if (value > maxValue / 10 ||
+        (value == maxValue / 10 && numericDigit > maxValue % 10)) {
+      return false;
+    }
+    value = value * 10 + numericDigit;
+  }
+  return value <= maxValue;
+}
+
+bool isWebServoID(byte servoID) {
+  byte webServoCount = searchNum < 5 ? searchNum : 5;
+  for (byte i = 0; i < webServoCount; i++) {
+    if (listID[i] == servoID) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void handleControls() {
+  String response;
+  response.reserve(256);
+  response = "{\"speed\":";
+  response += String(activeServoSpeed);
+  response += ",\"maxSpeed\":";
+  response += String(ServoMaxSpeed);
+  response += ",\"maxPosition\":";
+  response += String((int)ServoDigitalRange - 1);
+  response += ",\"servos\":[";
+
+  byte webServoCount = searchNum < 5 ? searchNum : 5;
+  for (byte i = 0; i < webServoCount; i++) {
+    byte servoID = listID[i];
+    if (i > 0) {
+      response += ",";
+    }
+    response += "{\"id\":";
+    response += String(servoID);
+    response += ",\"position\":";
+    response += String(posRead[servoID]);
+    response += ",\"mode\":";
+    response += String(modeRead[servoID]);
+    response += ",\"ready\":";
+    response += feedbackValid[servoID] ? "true" : "false";
+    response += "}";
+  }
+  response += "]}";
+  server.send(200, "application/json", response);
+}
+
+void handleSetServo() {
+  long servoID;
+  long position;
+  if (!server.hasArg("id") ||
+      !parseUnsignedArgument(server.arg("id"), 252, servoID) ||
+      !server.hasArg("position") ||
+      !parseUnsignedArgument(server.arg("position"), (int)ServoDigitalRange - 1, position)) {
+    server.send(400, "text/plain", "Invalid servo ID or position");
+    return;
+  }
+
+  if (!searchFinished || !isWebServoID((byte)servoID)) {
+    server.send(404, "text/plain", "Servo not found in the first five discovered servos");
+    return;
+  }
+  if (!feedbackValid[servoID]) {
+    server.send(409, "text/plain", "Servo state is not available yet");
+    return;
+  }
+  modeRead[servoID] = st.ReadMode((byte)servoID);
+  if (modeRead[servoID] != 0) {
+    server.send(409, "text/plain", "Position control is available only in servo mode");
+    return;
+  }
+
+  st.WritePosEx((byte)servoID, (s16)position, activeServoSpeed, ServoInitACC);
+  server.send(200, "text/plain", "OK");
+}
+
+void handleSetSpeed() {
+  long speed;
+  if (!server.hasArg("value") ||
+      !parseUnsignedArgument(server.arg("value"), ServoMaxSpeed, speed)) {
+    server.send(400, "text/plain", "Speed must be between 0 and ServoMaxSpeed");
+    return;
+  }
+
+  activeServoSpeed = (s16)speed;
+  server.send(200, "text/plain", "OK");
+}
+
 
 void webCtrlServer(){
     server.on("/", handleRoot);
     server.on("/readID", handleID);
     server.on("/readSTS", handleSTS);
+    server.on("/readControls", handleControls);
+    server.on("/setServo", handleSetServo);
+    server.on("/setSpeed", handleSetSpeed);
 
     server.on("/cmd", [](){
     int cmdT = server.arg(0).toInt();
