@@ -110,8 +110,10 @@ const char index_html[] PROGMEM = R"rawliteral(
     <span id="STSValue">Single servo infomation.</span>
     <p>
     <div class="control-panel">
-        <button class="button" id="wakeUpButton" type="button" onclick="wakeUpServos();">Wake up</button>
+        <button class="button" id="wakeUpButton" type="button" onclick="sendPresetPositions('wakeUp', 'Wake up');">Wake up</button>
         <p id="wakeUpMessage" role="status" aria-live="polite"></p>
+        <button class="button" id="sleepButton" type="button" onclick="sendPresetPositions('sleep', 'Sleep');">sleep</button>
+        <p id="sleepMessage" role="status" aria-live="polite"></p>
     </div>
     <div class="control-panel">
         <h4>Global movement speed</h4>
@@ -192,7 +194,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         var servoTimers = [];
         var servoInteracting = [];
         var speedInteracting = false;
-        var wakeUpRequestPending = false;
+        var presetRequestPending = false;
 
         function reportControlMessage(message) {
             document.getElementById("controlsMessage").textContent = message;
@@ -216,46 +218,50 @@ const char index_html[] PROGMEM = R"rawliteral(
             xhr.send();
         }
 
-        function wakeUpServos() {
-            if (wakeUpRequestPending) {
+        function sendPresetPositions(endpoint, label) {
+            if (presetRequestPending) {
                 return;
             }
-            wakeUpRequestPending = true;
-            var button = document.getElementById("wakeUpButton");
-            var message = document.getElementById("wakeUpMessage");
-            button.disabled = true;
-            message.textContent = "Sending wake-up positions to servo IDs 1-6...";
+            presetRequestPending = true;
+            var wakeUpButton = document.getElementById("wakeUpButton");
+            var sleepButton = document.getElementById("sleepButton");
+            var message = document.getElementById(endpoint + "Message");
+            wakeUpButton.disabled = true;
+            sleepButton.disabled = true;
+            message.textContent = "Sending " + label.toLowerCase() + " positions to servo IDs 1-6...";
 
             var xhr = new XMLHttpRequest();
             xhr.onreadystatechange = function() {
                 if (this.readyState != 4) {
                     return;
                 }
-                wakeUpRequestPending = false;
-                button.disabled = false;
+                presetRequestPending = false;
+                wakeUpButton.disabled = false;
+                sleepButton.disabled = false;
                 var result;
                 try {
                     result = JSON.parse(this.responseText);
                 } catch (error) {
-                    message.textContent = "Wake up failed: invalid response from controller.";
+                    message.textContent = label + " failed: invalid response from controller.";
                     return;
                 }
 
                 if (this.status != 200) {
-                    message.textContent = "Wake up failed: " +
+                    message.textContent = label + " failed: " +
                         (result.error || result.skipped || "controller returned HTTP " + this.status);
                     return;
                 }
-                message.textContent = "Wake-up commands sent to IDs " +
+                message.textContent = label + " commands sent to IDs " +
                     (result.moved.length ? result.moved.join(", ") : "none") +
                     (result.skipped ? ". Skipped IDs: " + result.skipped : ".");
             };
             xhr.onerror = function() {
-                wakeUpRequestPending = false;
-                button.disabled = false;
-                message.textContent = "Wake up failed: unable to reach the servo controller.";
+                presetRequestPending = false;
+                wakeUpButton.disabled = false;
+                sleepButton.disabled = false;
+                message.textContent = label + " failed: unable to reach the servo controller.";
             };
-            xhr.open("POST", "wakeUp", true);
+            xhr.open("POST", endpoint, true);
             xhr.send();
         }
 

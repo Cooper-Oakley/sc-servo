@@ -289,15 +289,14 @@ void handleSetSpeed() {
   server.send(200, "text/plain", "OK");
 }
 
-void handleWakeUp() {
+void handlePresetPositions(const s16 positions[], byte positionCount) {
   static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
-  static const s16 positions[] = {500, 350, 250, 560, 500, 800};
   String movedIDs;
   String skippedIDs;
   byte movedCount = 0;
   byte skippedCount = 0;
 
-  for (byte i = 0; i < sizeof(servoIDs) / sizeof(servoIDs[0]); i++) {
+  for (byte i = 0; i < positionCount; i++) {
     byte servoID = servoIDs[i];
     if (positions[i] < 0 || positions[i] >= ServoDigitalRange) {
       if (skippedCount > 0) {
@@ -342,6 +341,16 @@ void handleWakeUp() {
   server.send(movedCount > 0 ? 200 : 503, "application/json", response);
 }
 
+void handleWakeUp() {
+  static const s16 positions[] = {500, 350, 250, 560, 500, 800};
+  handlePresetPositions(positions, sizeof(positions) / sizeof(positions[0]));
+}
+
+void handleSleep() {
+  static const s16 positions[] = {500, 60, 35, 400, 500, 730};
+  handlePresetPositions(positions, sizeof(positions) / sizeof(positions[0]));
+}
+
 
 void webCtrlServer(){
     server.on("/", handleRoot);
@@ -351,6 +360,7 @@ void webCtrlServer(){
     server.on("/setServo", handleSetServo);
     server.on("/setSpeed", handleSetSpeed);
     server.on("/wakeUp", HTTP_POST, handleWakeUp);
+    server.on("/sleep", HTTP_POST, handleSleep);
 
     server.on("/cmd", [](){
     int cmdT = server.arg(0).toInt();
