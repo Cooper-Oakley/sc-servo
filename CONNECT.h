@@ -289,6 +289,59 @@ void handleSetSpeed() {
   server.send(200, "text/plain", "OK");
 }
 
+void handleWakeUp() {
+  static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
+  static const s16 positions[] = {500, 400, 300, 300, 500, 900};
+  String movedIDs;
+  String skippedIDs;
+  byte movedCount = 0;
+  byte skippedCount = 0;
+
+  for (byte i = 0; i < sizeof(servoIDs) / sizeof(servoIDs[0]); i++) {
+    byte servoID = servoIDs[i];
+    if (positions[i] < 0 || positions[i] >= ServoDigitalRange) {
+      if (skippedCount > 0) {
+        skippedIDs += ",";
+      }
+      skippedIDs += String(servoID) + ":out of range";
+      skippedCount++;
+      continue;
+    }
+
+    getFeedBack(servoID);
+    if (!feedbackValid[servoID]) {
+      if (skippedCount > 0) {
+        skippedIDs += ",";
+      }
+      skippedIDs += String(servoID) + ":no feedback";
+      skippedCount++;
+      continue;
+    }
+    if (modeRead[servoID] != 0) {
+      if (skippedCount > 0) {
+        skippedIDs += ",";
+      }
+      skippedIDs += String(servoID) + ":not in servo mode";
+      skippedCount++;
+      continue;
+    }
+
+    st.WritePosEx(servoID, positions[i], activeServoSpeed, ServoInitACC);
+    if (movedCount > 0) {
+      movedIDs += ",";
+    }
+    movedIDs += String(servoID);
+    movedCount++;
+  }
+
+  String response = "{\"moved\":[";
+  response += movedIDs;
+  response += "],\"skipped\":\"";
+  response += skippedIDs;
+  response += "\"}";
+  server.send(movedCount > 0 ? 200 : 503, "application/json", response);
+}
+
 
 void webCtrlServer(){
     server.on("/", handleRoot);
@@ -297,6 +350,7 @@ void webCtrlServer(){
     server.on("/readControls", handleControls);
     server.on("/setServo", handleSetServo);
     server.on("/setSpeed", handleSetSpeed);
+    server.on("/wakeUp", HTTP_POST, handleWakeUp);
 
     server.on("/cmd", [](){
     int cmdT = server.arg(0).toInt();
