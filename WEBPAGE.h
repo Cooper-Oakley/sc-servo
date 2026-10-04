@@ -137,7 +137,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     <div class="control-panel">
         <h4>Servo ID 4 position</h4>
         <div class="speed-slider-row">
-            <input id="servo4Slider" type="range" min="0" max="1022" value="0" disabled>
+            <input id="servo4Slider" type="range" min="90" max="950" value="90" disabled>
             <span id="servo4Value">--</span>
         </div>
         <p id="servo4Message" role="status" aria-live="polite">Reading servo position...</p>
