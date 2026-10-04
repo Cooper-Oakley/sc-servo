@@ -331,6 +331,33 @@ void handleSetServoPosition() {
   server.send(200, "text/plain", String(position));
 }
 
+void handleSetServos2And3Position() {
+  long position;
+  if (!server.hasArg("position") ||
+      !parseUnsignedArgument(server.arg("position"), servoPositionMax(2), position) ||
+      position < servoPositionMin(2) ||
+      position < servoPositionMin(3) ||
+      position > servoPositionMax(3)) {
+    server.send(400, "text/plain", "Shared servo 2/3 position must be between 60 and 800");
+    return;
+  }
+
+  getFeedBack(2);
+  getFeedBack(3);
+  if (!feedbackValid[2] || !feedbackValid[3]) {
+    server.send(409, "text/plain", "Servo 2 or servo 3 feedback is unavailable");
+    return;
+  }
+  if (modeRead[2] != 0 || modeRead[3] != 0) {
+    server.send(409, "text/plain", "Servo 2 and servo 3 must both be in servo mode");
+    return;
+  }
+
+  st.WritePosEx(2, (s16)position, activeServoSpeed, ServoInitACC);
+  st.WritePosEx(3, (s16)position, activeServoSpeed, ServoInitACC);
+  server.send(200, "text/plain", String(position));
+}
+
 void handlePresetPositions(const s16 positions[], byte positionCount) {
   static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
   String movedIDs;
@@ -402,6 +429,7 @@ void webCtrlServer(){
     server.on("/setSpeed", HTTP_POST, handleSetSpeed);
     server.on("/readPositionControls", handleReadPositionControls);
     server.on("/setServoPosition", HTTP_POST, handleSetServoPosition);
+    server.on("/setServos2And3Position", HTTP_POST, handleSetServos2And3Position);
     server.on("/wakeUp", HTTP_POST, handleWakeUp);
     server.on("/sleep", HTTP_POST, handleSleep);
 
