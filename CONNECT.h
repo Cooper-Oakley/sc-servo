@@ -228,19 +228,28 @@ void handleSetSpeed() {
   server.send(200, "text/plain", String(activeServoSpeed));
 }
 
-void handleReadServo1Control() {
-  getFeedBack(1);
-  getFeedBack(2);
-
+void handleReadPositionControls() {
+  static const byte servoIDs[] = {1, 2, 4, 5, 6};
   String response = "{\"maxPosition\":";
   response += String((int)ServoDigitalRange - 1);
-  response += ",\"servo1Position\":";
-  response += String(posRead[1]);
-  response += ",\"servo1Mode\":";
-  response += String(modeRead[1]);
-  response += ",\"servo1Ready\":";
-  response += feedbackValid[1] ? "true" : "false";
-  response += ",\"servo2Position\":";
+  response += ",\"servos\":[";
+  for (byte i = 0; i < sizeof(servoIDs) / sizeof(servoIDs[0]); i++) {
+    byte servoID = servoIDs[i];
+    getFeedBack(servoID);
+    if (i > 0) {
+      response += ",";
+    }
+    response += "{\"id\":";
+    response += String(servoID);
+    response += ",\"position\":";
+    response += String(posRead[servoID]);
+    response += ",\"mode\":";
+    response += String(modeRead[servoID]);
+    response += ",\"ready\":";
+    response += feedbackValid[servoID] ? "true" : "false";
+    response += "}";
+  }
+  response += "],\"servo2Position\":";
   response += String(posRead[2]);
   response += ",\"servo2Ready\":";
   response += feedbackValid[2] ? "true" : "false";
@@ -248,30 +257,41 @@ void handleReadServo1Control() {
   server.send(200, "application/json", response);
 }
 
-void handleSetServo1Position() {
+void handleSetServoPosition() {
+  long servoID;
   long position;
-  if (!server.hasArg("position") ||
+  if (!server.hasArg("id") ||
+      !parseUnsignedArgument(server.arg("id"), 6, servoID) ||
+      (servoID != 1 && servoID != 2 && servoID != 4 && servoID != 5 && servoID != 6) ||
+      !server.hasArg("position") ||
       !parseUnsignedArgument(server.arg("position"), (int)ServoDigitalRange - 1, position)) {
-    server.send(400, "text/plain", "Position must be between 0 and ServoDigitalRange - 1");
+    server.send(400, "text/plain", "Invalid servo ID or position");
     return;
   }
 
-  getFeedBack(1);
-  getFeedBack(2);
-  if (!feedbackValid[1] || !feedbackValid[2]) {
-    server.send(409, "text/plain", "Servo 1 or servo 2 feedback is unavailable");
+  byte targetID = (byte)servoID;
+  getFeedBack(targetID);
+  if (!feedbackValid[targetID]) {
+    server.send(409, "text/plain", "Servo feedback is unavailable");
     return;
   }
-  if (modeRead[1] != 0) {
-    server.send(409, "text/plain", "Servo 1 is not in servo mode");
+  if (modeRead[targetID] != 0) {
+    server.send(409, "text/plain", "Servo is not in servo mode");
     return;
   }
-  if (posRead[2] <= 70) {
-    server.send(409, "text/plain", "Servo 1 movement requires servo 2 position greater than 70");
-    return;
+  if (targetID == 1) {
+    getFeedBack(2);
+    if (!feedbackValid[2]) {
+      server.send(409, "text/plain", "Servo 2 feedback is unavailable");
+      return;
+    }
+    if (posRead[2] <= 70) {
+      server.send(409, "text/plain", "Servo 1 movement requires servo 2 position greater than 70");
+      return;
+    }
   }
 
-  st.WritePosEx(1, (s16)position, activeServoSpeed, ServoInitACC);
+  st.WritePosEx(targetID, (s16)position, activeServoSpeed, ServoInitACC);
   server.send(200, "text/plain", String(position));
 }
 
@@ -344,8 +364,8 @@ void webCtrlServer(){
     server.on("/readSTS", handleSTS);
     server.on("/readSpeed", handleReadSpeed);
     server.on("/setSpeed", HTTP_POST, handleSetSpeed);
-    server.on("/readServo1Control", handleReadServo1Control);
-    server.on("/setServo1Position", HTTP_POST, handleSetServo1Position);
+    server.on("/readPositionControls", handleReadPositionControls);
+    server.on("/setServoPosition", HTTP_POST, handleSetServoPosition);
     server.on("/wakeUp", HTTP_POST, handleWakeUp);
     server.on("/sleep", HTTP_POST, handleSleep);
 
