@@ -48,12 +48,14 @@ int servoPositionMin(byte servoID){
   if(servoID == 2){return 60;}
   if(servoID == 3){return 35;}
   if(servoID == 4){return 90;}
+  if(servoID == 6){return 725;}
   return 0;
 }
 
 int servoPositionMax(byte servoID){
   if(servoID == 2 || servoID == 3){return 800;}
   if(servoID == 4){return 950;}
+  if(servoID == 6){return 800;}
   return (int)ServoDigitalRange - 1;
 }
 
