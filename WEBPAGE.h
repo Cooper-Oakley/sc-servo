@@ -135,6 +135,15 @@ const char index_html[] PROGMEM = R"rawliteral(
         <p id="servo3Message" role="status" aria-live="polite">Reading servo position...</p>
     </div>
     <div class="control-panel">
+        <h4>Servo IDs 2 &amp; 3 together</h4>
+        <div class="speed-slider-row">
+            <input id="servo23Slider" type="range" min="60" max="800" value="60" disabled>
+            <span id="servo23Value">60</span>
+        </div>
+        <p id="servo23Positions">Current positions: --</p>
+        <p id="servo23Message" role="status" aria-live="polite">Waiting for servo positions...</p>
+    </div>
+    <div class="control-panel">
         <h4>Servo ID 4 position</h4>
         <div class="speed-slider-row">
             <input id="servo4Slider" type="range" min="90" max="950" value="90" disabled>
@@ -198,6 +207,8 @@ const char index_html[] PROGMEM = R"rawliteral(
         var servoIDs = [1, 2, 3, 4, 5, 6];
         var servoInteracting = {};
         var servoRequestPending = {};
+        var servo23Interacting = false;
+        var servo23RequestPending = false;
 
         setInterval(function() {
             getSpeed();
@@ -218,6 +229,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                     for (var i = 0; i < servoIDs.length; i++) {
                         document.getElementById("servo" + servoIDs[i] + "Slider").disabled = true;
                     }
+                    document.getElementById("servo23Slider").disabled = true;
                     gateMessage.textContent = "Unable to read servo positions (HTTP " + this.status + ").";
                     return;
                 }
@@ -256,7 +268,8 @@ const char index_html[] PROGMEM = R"rawliteral(
                                 : "Position control requires servo 2 position above 70 (current: " +
                                     state.servo2Position + ").";
                         } else {
-                            slider.disabled = !!servoRequestPending[servo.id];
+                            slider.disabled = !!servoRequestPending[servo.id] ||
+                                (servo23RequestPending && (servo.id == 2 || servo.id == 3));
                             if (servo.id == 1) {
                                 gateMessage.textContent = "Servo 2 position: " + state.servo2Position +
                                     " - movement enabled.";
@@ -266,10 +279,35 @@ const char index_html[] PROGMEM = R"rawliteral(
                             }
                         }
                     }
+                    var servo2 = state.servos.filter(function(servo) { return servo.id == 2; })[0];
+                    var servo3 = state.servos.filter(function(servo) { return servo.id == 3; })[0];
+                    var servo23Slider = document.getElementById("servo23Slider");
+                    var servo23Message = document.getElementById("servo23Message");
+                    if (servo2 && servo3 && servo2.ready && servo3.ready) {
+                        if (!servo23Interacting && !servo23RequestPending) {
+                            var sharedPosition = Math.max(60, Math.min(800, servo2.position));
+                            servo23Slider.value = sharedPosition;
+                            document.getElementById("servo23Value").textContent = sharedPosition;
+                        }
+                        document.getElementById("servo23Positions").textContent =
+                            "Current positions - ID 2: " + servo2.position + ", ID 3: " + servo3.position;
+                        if (servo2.mode != 0 || servo3.mode != 0) {
+                            servo23Slider.disabled = true;
+                            servo23Message.textContent = "Both servos must be in servo mode.";
+                        } else {
+                            servo23Slider.disabled = servo23RequestPending ||
+                                !!servoRequestPending[2] || !!servoRequestPending[3];
+                            servo23Message.textContent = "Shared target range: 60-800.";
+                        }
+                    } else {
+                        servo23Slider.disabled = true;
+                        servo23Message.textContent = "Servo 2 and 3 feedback are both required.";
+                    }
                 } catch (error) {
                     for (var i = 0; i < servoIDs.length; i++) {
                         document.getElementById("servo" + servoIDs[i] + "Slider").disabled = true;
                     }
+                    document.getElementById("servo23Slider").disabled = true;
                     gateMessage.textContent = "Invalid servo position response from controller.";
                 }
             };
@@ -277,6 +315,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                 for (var i = 0; i < servoIDs.length; i++) {
                     document.getElementById("servo" + servoIDs[i] + "Slider").disabled = true;
                 }
+                document.getElementById("servo23Slider").disabled = true;
                 document.getElementById("servo1GateMessage").textContent =
                     "Unable to reach the servo controller.";
             };
@@ -292,6 +331,9 @@ const char index_html[] PROGMEM = R"rawliteral(
             var message = document.getElementById("servo" + servoID + "Message");
             servoRequestPending[servoID] = true;
             slider.disabled = true;
+            if (servoID == 2 || servoID == 3) {
+                document.getElementById("servo23Slider").disabled = true;
+            }
             message.textContent = servoID == 1
                 ? "Checking servo 2 and moving servo 1..."
                 : "Moving servo " + servoID + "...";
@@ -332,6 +374,46 @@ const char index_html[] PROGMEM = R"rawliteral(
                 });
             })(servoIDs[i]);
         }
+
+        document.getElementById("servo23Slider").addEventListener("input", function() {
+            servo23Interacting = true;
+            document.getElementById("servo23Value").textContent = this.value;
+        });
+        document.getElementById("servo23Slider").addEventListener("change", function() {
+            if (servo23RequestPending) {
+                return;
+            }
+            var slider = this;
+            var message = document.getElementById("servo23Message");
+            servo23RequestPending = true;
+            slider.disabled = true;
+            document.getElementById("servo2Slider").disabled = true;
+            document.getElementById("servo3Slider").disabled = true;
+            message.textContent = "Moving servos 2 and 3 to the shared target...";
+
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                servo23RequestPending = false;
+                servo23Interacting = false;
+                message.textContent = this.status == 200
+                    ? "Position command sent to servos 2 and 3."
+                    : "Combined movement rejected: " + this.responseText;
+                getPositionControls();
+            };
+            xhr.onerror = function() {
+                servo23RequestPending = false;
+                servo23Interacting = false;
+                slider.disabled = false;
+                message.textContent = "Unable to reach the servo controller.";
+                getPositionControls();
+            };
+            xhr.open("POST", "setServos2And3Position", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            xhr.send("position=" + encodeURIComponent(slider.value));
+        });
 
         function getSpeed() {
             var xhr = new XMLHttpRequest();
