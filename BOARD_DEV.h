@@ -124,13 +124,7 @@ void espNowSendData(){
 void InfoUpdateThreading(void *pvParameter){
   while(1){
     if(!SERIAL_FORWARDING && !RAINBOW_STATUS){
-      byte webServoCount = searchNum < 5 ? searchNum : 5;
-      for(byte i = 0; i < webServoCount; i++){
-        getFeedBack(listID[i]);
-      }
-      if(activeNumInList >= webServoCount && searchNum > 0){
-        getFeedBack(listID[activeNumInList]);
-      }
+      getFeedBack(listID[activeNumInList]);
       getWifiStatus();
       screenUpdate();
       delay(threadingInterval);
