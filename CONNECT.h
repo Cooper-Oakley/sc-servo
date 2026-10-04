@@ -243,6 +243,10 @@ void handleReadPositionControls() {
     response += String(servoID);
     response += ",\"position\":";
     response += String(posRead[servoID]);
+    response += ",\"minPosition\":";
+    response += String(servoID == 2 ? 60 : 0);
+    response += ",\"maxPosition\":";
+    response += String(servoID == 2 ? 800 : (int)ServoDigitalRange - 1);
     response += ",\"mode\":";
     response += String(modeRead[servoID]);
     response += ",\"ready\":";
@@ -266,6 +270,10 @@ void handleSetServoPosition() {
       !server.hasArg("position") ||
       !parseUnsignedArgument(server.arg("position"), (int)ServoDigitalRange - 1, position)) {
     server.send(400, "text/plain", "Invalid servo ID or position");
+    return;
+  }
+  if (servoID == 2 && (position < 60 || position > 800)) {
+    server.send(400, "text/plain", "Servo 2 position must be between 60 and 800");
     return;
   }
 

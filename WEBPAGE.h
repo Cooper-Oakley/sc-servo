@@ -121,7 +121,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     <div class="control-panel">
         <h4>Servo ID 2 position</h4>
         <div class="speed-slider-row">
-            <input id="servo2Slider" type="range" min="0" max="1022" value="0" disabled>
+            <input id="servo2Slider" type="range" min="60" max="800" value="60" disabled>
             <span id="servo2Value">--</span>
         </div>
         <p id="servo2Message" role="status" aria-live="polite">Reading servo position...</p>
@@ -219,6 +219,8 @@ const char index_html[] PROGMEM = R"rawliteral(
                         var servo = state.servos[i];
                         var slider = document.getElementById("servo" + servo.id + "Slider");
                         var value = document.getElementById("servo" + servo.id + "Value");
+                        slider.min = servo.minPosition;
+                        slider.max = servo.maxPosition;
                         if (servo.ready && !servoInteracting[servo.id] && !servoRequestPending[servo.id]) {
                             slider.value = servo.position;
                             value.textContent = servo.position;
