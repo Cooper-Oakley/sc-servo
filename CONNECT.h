@@ -291,7 +291,7 @@ void handleSetSpeed() {
 
 void handleWakeUp() {
   static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
-  static const s16 positions[] = {500, 400, 300, 300, 500, 900};
+  static const s16 positions[] = {500, 350, 250, 560, 500, 800};
   String movedIDs;
   String skippedIDs;
   byte movedCount = 0;
