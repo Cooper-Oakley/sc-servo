@@ -127,6 +127,14 @@ const char index_html[] PROGMEM = R"rawliteral(
         <p id="servo2Message" role="status" aria-live="polite">Reading servo position...</p>
     </div>
     <div class="control-panel">
+        <h4>Servo ID 3 position</h4>
+        <div class="speed-slider-row">
+            <input id="servo3Slider" type="range" min="35" max="800" value="35" disabled>
+            <span id="servo3Value">--</span>
+        </div>
+        <p id="servo3Message" role="status" aria-live="polite">Reading servo position...</p>
+    </div>
+    <div class="control-panel">
         <h4>Servo ID 4 position</h4>
         <div class="speed-slider-row">
             <input id="servo4Slider" type="range" min="0" max="1022" value="0" disabled>
@@ -187,7 +195,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         var presetRequestPending = false;
         var speedInteracting = false;
         var speedRequestPending = false;
-        var servoIDs = [1, 2, 4, 5, 6];
+        var servoIDs = [1, 2, 3, 4, 5, 6];
         var servoInteracting = {};
         var servoRequestPending = {};
 
