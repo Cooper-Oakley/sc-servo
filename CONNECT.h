@@ -44,10 +44,33 @@ int rangeCtrl(int rawInput, int minInput, int maxInput){
   }
 }
 
+int servoPositionMin(byte servoID){
+  if(servoID == 2){return 60;}
+  if(servoID == 3){return 35;}
+  if(servoID == 4){return 90;}
+  if(servoID == 6){return 725;}
+  return 0;
+}
+
+int servoPositionMax(byte servoID){
+  if(servoID == 2 || servoID == 3){return 800;}
+  if(servoID == 4){return 950;}
+  if(servoID == 6){return 800;}
+  return (int)ServoDigitalRange - 1;
+}
+
+int clampServoPosition(byte servoID, int position){
+  return rangeCtrl(position, servoPositionMin(servoID), servoPositionMax(servoID));
+}
+
 
 void activeCtrl(int cmdInput){
   switch(cmdInput){
-    case 1:st.WritePosEx(listID[activeNumInList], ServoDigitalMiddle, activeServoSpeed, ServoInitACC);break;
+    case 1:{
+      byte servoID = listID[activeNumInList];
+      st.WritePosEx(servoID, clampServoPosition(servoID, ServoDigitalMiddle), activeServoSpeed, ServoInitACC);
+      break;
+    }
     case 2:
       if(modeRead[listID[activeNumInList]] == 0) {
         servoStop(listID[activeNumInList]);
@@ -61,10 +84,13 @@ void activeCtrl(int cmdInput){
     case 5:
       if(modeRead[listID[activeNumInList]] == 0){
         if(SERVO_TYPE_SELECT == 1){
-          st.WritePosEx(listID[activeNumInList], ServoDigitalRange - 1, activeServoSpeed, ServoInitACC);
+          byte servoID = listID[activeNumInList];
+          st.WritePosEx(servoID, clampServoPosition(servoID, ServoDigitalRange - 1), activeServoSpeed, ServoInitACC);
         }
         else if(SERVO_TYPE_SELECT == 2){
-          st.WritePosEx(listID[activeNumInList], ServoDigitalRange - MAX_MIN_OFFSET, activeServoSpeed, ServoInitACC);
+          byte servoID = listID[activeNumInList];
+          int position = ServoDigitalRange - MAX_MIN_OFFSET;
+          st.WritePosEx(servoID, clampServoPosition(servoID, position), activeServoSpeed, ServoInitACC);
         }
       }
 
@@ -81,10 +107,12 @@ void activeCtrl(int cmdInput){
     case 6:
       if(modeRead[listID[activeNumInList]] == 0){
         if(SERVO_TYPE_SELECT == 1){
-          st.WritePosEx(listID[activeNumInList], 0, activeServoSpeed, ServoInitACC);
+          byte servoID = listID[activeNumInList];
+          st.WritePosEx(servoID, clampServoPosition(servoID, 0), activeServoSpeed, ServoInitACC);
         }
         else if(SERVO_TYPE_SELECT == 2){
-          st.WritePosEx(listID[activeNumInList], MAX_MIN_OFFSET, activeServoSpeed, ServoInitACC);
+          byte servoID = listID[activeNumInList];
+          st.WritePosEx(servoID, clampServoPosition(servoID, MAX_MIN_OFFSET), activeServoSpeed, ServoInitACC);
         }
       }
 
@@ -103,8 +131,14 @@ void activeCtrl(int cmdInput){
     case 9:servotoSet += 1;if(servotoSet > 250){servotoSet = 0;}break;
     case 10:servotoSet -= 1;if(servotoSet < 0){servotoSet = 0;}break;
     case 11:setMiddle(listID[activeNumInList]);break;
-    case 12:setMode(listID[activeNumInList], 0);break;
-    case 13:setMode(listID[activeNumInList], 3);break;
+    case 12:
+      setMode(listID[activeNumInList], 0);
+      modeRead[listID[activeNumInList]] = 0;
+      break;
+    case 13:
+      setMode(listID[activeNumInList], 3);
+      modeRead[listID[activeNumInList]] = 3;
+      break;
     case 14:SERIAL_FORWARDING = true;break;
     case 15:SERIAL_FORWARDING = false;break;
     case 16:setID(listID[activeNumInList], servotoSet);break;
@@ -180,11 +214,196 @@ void handleSTS() {
   server.send(200, "text/plane", stsValue); //Send ADC value only to client ajax request
 }
 
+bool parseUnsignedArgument(const String &argument, long maxValue, long &value) {
+  if (argument.length() == 0) {
+    return false;
+  }
+
+  value = 0;
+  for (unsigned int i = 0; i < argument.length(); i++) {
+    char digit = argument.charAt(i);
+    if (digit < '0' || digit > '9') {
+      return false;
+    }
+    int numericDigit = digit - '0';
+    if (value > maxValue / 10 ||
+        (value == maxValue / 10 && numericDigit > maxValue % 10)) {
+      return false;
+    }
+    value = value * 10 + numericDigit;
+  }
+  return value <= maxValue;
+}
+
+void handleReadSpeed() {
+  String response = "{\"speed\":";
+  response += String(activeServoSpeed);
+  response += ",\"maxSpeed\":";
+  response += String(ServoMaxSpeed);
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleSetSpeed() {
+  long speed;
+  if (!server.hasArg("value") ||
+      !parseUnsignedArgument(server.arg("value"), ServoMaxSpeed, speed)) {
+    server.send(400, "text/plain", "Speed must be between 0 and ServoMaxSpeed");
+    return;
+  }
+
+  activeServoSpeed = (s16)speed;
+  server.send(200, "text/plain", String(activeServoSpeed));
+}
+
+void handleReadPositionControls() {
+  static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
+  String response = "{\"maxPosition\":";
+  response += String((int)ServoDigitalRange - 1);
+  response += ",\"servos\":[";
+  for (byte i = 0; i < sizeof(servoIDs) / sizeof(servoIDs[0]); i++) {
+    byte servoID = servoIDs[i];
+    getFeedBack(servoID);
+    if (i > 0) {
+      response += ",";
+    }
+    response += "{\"id\":";
+    response += String(servoID);
+    response += ",\"position\":";
+    response += String(posRead[servoID]);
+    response += ",\"minPosition\":";
+    response += String(servoPositionMin(servoID));
+    response += ",\"maxPosition\":";
+    response += String(servoPositionMax(servoID));
+    response += ",\"mode\":";
+    response += String(modeRead[servoID]);
+    response += ",\"ready\":";
+    response += feedbackValid[servoID] ? "true" : "false";
+    response += "}";
+  }
+  response += "],\"servo2Position\":";
+  response += String(posRead[2]);
+  response += ",\"servo2Ready\":";
+  response += feedbackValid[2] ? "true" : "false";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleSetServoPosition() {
+  long servoID;
+  long position;
+  if (!server.hasArg("id") ||
+      !parseUnsignedArgument(server.arg("id"), 6, servoID) ||
+      (servoID != 1 && servoID != 2 && servoID != 3 && servoID != 4 && servoID != 5 && servoID != 6) ||
+      !server.hasArg("position") ||
+      !parseUnsignedArgument(server.arg("position"), (int)ServoDigitalRange - 1, position)) {
+    server.send(400, "text/plain", "Invalid servo ID or position");
+    return;
+  }
+  if (position < servoPositionMin((byte)servoID) || position > servoPositionMax((byte)servoID)) {
+    server.send(400, "text/plain", "Servo position is outside the allowed range");
+    return;
+  }
+
+  byte targetID = (byte)servoID;
+  getFeedBack(targetID);
+  if (!feedbackValid[targetID]) {
+    server.send(409, "text/plain", "Servo feedback is unavailable");
+    return;
+  }
+  if (modeRead[targetID] != 0) {
+    server.send(409, "text/plain", "Servo is not in servo mode");
+    return;
+  }
+  if (targetID == 1) {
+    getFeedBack(2);
+    if (!feedbackValid[2]) {
+      server.send(409, "text/plain", "Servo 2 feedback is unavailable");
+      return;
+    }
+    if (posRead[2] <= 70) {
+      server.send(409, "text/plain", "Servo 1 movement requires servo 2 position greater than 70");
+      return;
+    }
+  }
+
+  st.WritePosEx(targetID, (s16)position, activeServoSpeed, ServoInitACC);
+  server.send(200, "text/plain", String(position));
+}
+
+void handlePresetPositions(const s16 positions[], byte positionCount) {
+  static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
+  String movedIDs;
+  String skippedIDs;
+  byte movedCount = 0;
+  byte skippedCount = 0;
+
+  for (byte i = 0; i < positionCount; i++) {
+    byte servoID = servoIDs[i];
+    if (positions[i] < servoPositionMin(servoID) || positions[i] > servoPositionMax(servoID)) {
+      if (skippedCount > 0) {
+        skippedIDs += ",";
+      }
+      skippedIDs += String(servoID) + ":out of range";
+      skippedCount++;
+      continue;
+    }
+
+    getFeedBack(servoID);
+    if (!feedbackValid[servoID]) {
+      if (skippedCount > 0) {
+        skippedIDs += ",";
+      }
+      skippedIDs += String(servoID) + ":no feedback";
+      skippedCount++;
+      continue;
+    }
+    if (modeRead[servoID] != 0) {
+      if (skippedCount > 0) {
+        skippedIDs += ",";
+      }
+      skippedIDs += String(servoID) + ":not in servo mode";
+      skippedCount++;
+      continue;
+    }
+
+    st.WritePosEx(servoID, positions[i], activeServoSpeed, ServoInitACC);
+    if (movedCount > 0) {
+      movedIDs += ",";
+    }
+    movedIDs += String(servoID);
+    movedCount++;
+  }
+
+  String response = "{\"moved\":[";
+  response += movedIDs;
+  response += "],\"skipped\":\"";
+  response += skippedIDs;
+  response += "\"}";
+  server.send(movedCount > 0 ? 200 : 503, "application/json", response);
+}
+
+void handleWakeUp() {
+  static const s16 positions[] = {500, 350, 250, 560, 500, 800};
+  handlePresetPositions(positions, sizeof(positions) / sizeof(positions[0]));
+}
+
+void handleSleep() {
+  static const s16 positions[] = {500, 60, 35, 400, 500, 730};
+  handlePresetPositions(positions, sizeof(positions) / sizeof(positions[0]));
+}
+
 
 void webCtrlServer(){
     server.on("/", handleRoot);
     server.on("/readID", handleID);
     server.on("/readSTS", handleSTS);
+    server.on("/readSpeed", handleReadSpeed);
+    server.on("/setSpeed", HTTP_POST, handleSetSpeed);
+    server.on("/readPositionControls", handleReadPositionControls);
+    server.on("/setServoPosition", HTTP_POST, handleSetServoPosition);
+    server.on("/wakeUp", HTTP_POST, handleWakeUp);
+    server.on("/sleep", HTTP_POST, handleSleep);
 
     server.on("/cmd", [](){
     int cmdT = server.arg(0).toInt();

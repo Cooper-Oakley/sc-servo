@@ -60,6 +60,29 @@ const char index_html[] PROGMEM = R"rawliteral(
         background: #f21c21
     }
 
+    .control-panel {
+        margin: 16px 10px;
+        padding: 12px;
+        border: 1px solid #555;
+        border-radius: 8px;
+        text-align: left;
+    }
+
+    .control-panel h4 {
+        margin: 4px 0 10px;
+    }
+
+    .speed-slider-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .speed-slider-row input[type="range"] {
+        flex: 1;
+        min-width: 0;
+    }
+
     </style>
 </head>
 
@@ -71,6 +94,70 @@ const char index_html[] PROGMEM = R"rawliteral(
     <label align="center"><button class="button" onclick="toggleCheckbox(9, 0, 0, 0);">Start Searching</button></label>
     <p>
     <span id="STSValue">Single servo infomation.</span>
+    <p>
+    <div class="control-panel">
+        <button class="button" id="wakeUpButton" type="button" onclick="sendPresetPositions('wakeUp', 'Wake up');">Wake up</button>
+        <p id="wakeUpMessage" role="status" aria-live="polite"></p>
+        <button class="button" id="sleepButton" type="button" onclick="sendPresetPositions('sleep', 'Sleep');">sleep</button>
+        <p id="sleepMessage" role="status" aria-live="polite"></p>
+    </div>
+    <div class="control-panel">
+        <h4>Global movement speed</h4>
+        <div class="speed-slider-row">
+            <input id="speedSlider" type="range" min="0" max="1500" value="100" disabled>
+            <span id="speedValue">100</span>
+        </div>
+        <p id="speedMessage" role="status" aria-live="polite">Reading movement speed...</p>
+    </div>
+    <div class="control-panel">
+        <h4>Servo ID 1 position</h4>
+        <div class="speed-slider-row">
+            <input id="servo1Slider" type="range" min="0" max="1022" value="0" disabled>
+            <span id="servo1Value">--</span>
+        </div>
+        <p id="servo1GateMessage" role="status" aria-live="polite">Reading servo positions...</p>
+        <p id="servo1Message" role="status" aria-live="polite"></p>
+    </div>
+    <div class="control-panel">
+        <h4>Servo ID 2 position</h4>
+        <div class="speed-slider-row">
+            <input id="servo2Slider" type="range" min="60" max="800" value="60" disabled>
+            <span id="servo2Value">--</span>
+        </div>
+        <p id="servo2Message" role="status" aria-live="polite">Reading servo position...</p>
+    </div>
+    <div class="control-panel">
+        <h4>Servo ID 3 position</h4>
+        <div class="speed-slider-row">
+            <input id="servo3Slider" type="range" min="35" max="800" value="35" disabled>
+            <span id="servo3Value">--</span>
+        </div>
+        <p id="servo3Message" role="status" aria-live="polite">Reading servo position...</p>
+    </div>
+    <div class="control-panel">
+        <h4>Servo ID 4 position</h4>
+        <div class="speed-slider-row">
+            <input id="servo4Slider" type="range" min="90" max="950" value="90" disabled>
+            <span id="servo4Value">--</span>
+        </div>
+        <p id="servo4Message" role="status" aria-live="polite">Reading servo position...</p>
+    </div>
+    <div class="control-panel">
+        <h4>Servo ID 5 position</h4>
+        <div class="speed-slider-row">
+            <input id="servo5Slider" type="range" min="0" max="1022" value="0" disabled>
+            <span id="servo5Value">--</span>
+        </div>
+        <p id="servo5Message" role="status" aria-live="polite">Reading servo position...</p>
+    </div>
+    <div class="control-panel">
+        <h4>Servo ID 6 position</h4>
+        <div class="speed-slider-row">
+            <input id="servo6Slider" type="range" min="725" max="800" value="725" disabled>
+            <span id="servo6Value">--</span>
+        </div>
+        <p id="servo6Message" role="status" aria-live="polite">Reading servo position...</p>
+    </div>
     <p>
         <label align="center"><button class="button" onclick="toggleCheckbox(0, 1, 0, 0);">ID Select+</button></label>
         <label align="center"><button class="button" onclick="toggleCheckbox(0, -1, 0, 0);">ID Select-</button></label>
@@ -105,6 +192,271 @@ const char index_html[] PROGMEM = R"rawliteral(
         <label align="center"><button class="button" onclick="toggleCheckbox(1, 21, 0, 0);">RainbowOFF</button></label>
     <script>
         serialForwardStatus = false;
+        var presetRequestPending = false;
+        var speedInteracting = false;
+        var speedRequestPending = false;
+        var servoIDs = [1, 2, 3, 4, 5, 6];
+        var servoInteracting = {};
+        var servoRequestPending = {};
+
+        setInterval(function() {
+            getSpeed();
+        }, 1000);
+
+        setInterval(function() {
+            getPositionControls();
+        }, 700);
+
+        function getPositionControls() {
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                var gateMessage = document.getElementById("servo1GateMessage");
+                if (this.status != 200) {
+                    for (var i = 0; i < servoIDs.length; i++) {
+                        document.getElementById("servo" + servoIDs[i] + "Slider").disabled = true;
+                    }
+                    gateMessage.textContent = "Unable to read servo positions (HTTP " + this.status + ").";
+                    return;
+                }
+                try {
+                    var state = JSON.parse(this.responseText);
+                    for (var i = 0; i < state.servos.length; i++) {
+                        var servo = state.servos[i];
+                        var slider = document.getElementById("servo" + servo.id + "Slider");
+                        var value = document.getElementById("servo" + servo.id + "Value");
+                        slider.min = servo.minPosition;
+                        slider.max = servo.maxPosition;
+                        if (servo.ready && !servoInteracting[servo.id] && !servoRequestPending[servo.id]) {
+                            slider.value = servo.position;
+                            value.textContent = servo.position;
+                        }
+                        if (!servo.ready) {
+                            slider.disabled = true;
+                            if (servo.id == 1) {
+                                gateMessage.textContent = "Position control disabled: servo feedback unavailable.";
+                            } else {
+                                document.getElementById("servo" + servo.id + "Message").textContent =
+                                    "Position control disabled: servo feedback unavailable.";
+                            }
+                        } else if (servo.mode != 0) {
+                            slider.disabled = true;
+                            var modeMessage = "Position control disabled: servo is not in servo mode.";
+                            if (servo.id == 1) {
+                                gateMessage.textContent = modeMessage;
+                            } else {
+                                document.getElementById("servo" + servo.id + "Message").textContent = modeMessage;
+                            }
+                        } else if (servo.id == 1 && (!state.servo2Ready || state.servo2Position <= 70)) {
+                            slider.disabled = true;
+                            gateMessage.textContent = !state.servo2Ready
+                                ? "Position control disabled: servo 2 feedback unavailable."
+                                : "Position control requires servo 2 position above 70 (current: " +
+                                    state.servo2Position + ").";
+                        } else {
+                            slider.disabled = !!servoRequestPending[servo.id];
+                            if (servo.id == 1) {
+                                gateMessage.textContent = "Servo 2 position: " + state.servo2Position +
+                                    " - movement enabled.";
+                            } else {
+                                document.getElementById("servo" + servo.id + "Message").textContent =
+                                    "Position control enabled.";
+                            }
+                        }
+                    }
+                } catch (error) {
+                    for (var i = 0; i < servoIDs.length; i++) {
+                        document.getElementById("servo" + servoIDs[i] + "Slider").disabled = true;
+                    }
+                    gateMessage.textContent = "Invalid servo position response from controller.";
+                }
+            };
+            xhr.onerror = function() {
+                for (var i = 0; i < servoIDs.length; i++) {
+                    document.getElementById("servo" + servoIDs[i] + "Slider").disabled = true;
+                }
+                document.getElementById("servo1GateMessage").textContent =
+                    "Unable to reach the servo controller.";
+            };
+            xhr.open("GET", "readPositionControls", true);
+            xhr.send();
+        }
+
+        function setServoPosition(servoID) {
+            if (servoRequestPending[servoID]) {
+                return;
+            }
+            var slider = document.getElementById("servo" + servoID + "Slider");
+            var message = document.getElementById("servo" + servoID + "Message");
+            servoRequestPending[servoID] = true;
+            slider.disabled = true;
+            message.textContent = servoID == 1
+                ? "Checking servo 2 and moving servo 1..."
+                : "Moving servo " + servoID + "...";
+
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                servoRequestPending[servoID] = false;
+                servoInteracting[servoID] = false;
+                message.textContent = this.status == 200
+                    ? "Servo " + servoID + " position command sent."
+                    : "Servo " + servoID + " movement rejected: " + this.responseText;
+                getPositionControls();
+            };
+            xhr.onerror = function() {
+                servoRequestPending[servoID] = false;
+                servoInteracting[servoID] = false;
+                message.textContent = "Unable to reach the servo controller.";
+                getPositionControls();
+            };
+            xhr.open("POST", "setServoPosition", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            xhr.send("id=" + encodeURIComponent(servoID) +
+                "&position=" + encodeURIComponent(slider.value));
+        }
+
+        for (var i = 0; i < servoIDs.length; i++) {
+            (function(servoID) {
+                var slider = document.getElementById("servo" + servoID + "Slider");
+                slider.addEventListener("input", function() {
+                    servoInteracting[servoID] = true;
+                    document.getElementById("servo" + servoID + "Value").textContent = this.value;
+                });
+                slider.addEventListener("change", function() {
+                    setServoPosition(servoID);
+                });
+            })(servoIDs[i]);
+        }
+
+        function getSpeed() {
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                if (this.status != 200) {
+                    document.getElementById("speedMessage").textContent =
+                        "Unable to read movement speed (HTTP " + this.status + ").";
+                    return;
+                }
+                try {
+                    var speed = JSON.parse(this.responseText);
+                    var slider = document.getElementById("speedSlider");
+                    slider.max = speed.maxSpeed;
+                    slider.disabled = speedRequestPending;
+                    if (!speedInteracting && !speedRequestPending) {
+                        slider.value = speed.speed;
+                        document.getElementById("speedValue").textContent = speed.speed;
+                    }
+                    document.getElementById("speedMessage").textContent =
+                        "Speed range: 0-" + speed.maxSpeed;
+                } catch (error) {
+                    document.getElementById("speedMessage").textContent =
+                        "Invalid movement speed response from controller.";
+                }
+            };
+            xhr.onerror = function() {
+                document.getElementById("speedMessage").textContent =
+                    "Unable to reach the servo controller.";
+            };
+            xhr.open("GET", "readSpeed", true);
+            xhr.send();
+        }
+
+        function setSpeed() {
+            if (speedRequestPending) {
+                return;
+            }
+            var slider = document.getElementById("speedSlider");
+            var message = document.getElementById("speedMessage");
+            speedRequestPending = true;
+            slider.disabled = true;
+            message.textContent = "Updating movement speed...";
+
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                speedRequestPending = false;
+                speedInteracting = false;
+                slider.disabled = false;
+                if (this.status != 200) {
+                    message.textContent = "Unable to update movement speed: " + this.responseText;
+                    getSpeed();
+                    return;
+                }
+                slider.value = this.responseText;
+                document.getElementById("speedValue").textContent = this.responseText;
+                message.textContent = "Movement speed updated.";
+            };
+            xhr.onerror = function() {
+                speedRequestPending = false;
+                speedInteracting = false;
+                slider.disabled = false;
+                message.textContent = "Unable to reach the servo controller.";
+            };
+            xhr.open("POST", "setSpeed?value=" + encodeURIComponent(slider.value), true);
+            xhr.send();
+        }
+
+        document.getElementById("speedSlider").addEventListener("input", function() {
+            speedInteracting = true;
+            document.getElementById("speedValue").textContent = this.value;
+        });
+        document.getElementById("speedSlider").addEventListener("change", setSpeed);
+
+        function sendPresetPositions(endpoint, label) {
+            if (presetRequestPending) {
+                return;
+            }
+            presetRequestPending = true;
+            var wakeUpButton = document.getElementById("wakeUpButton");
+            var sleepButton = document.getElementById("sleepButton");
+            var message = document.getElementById(endpoint + "Message");
+            wakeUpButton.disabled = true;
+            sleepButton.disabled = true;
+            message.textContent = "Sending " + label.toLowerCase() + " positions to servo IDs 1-6...";
+
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                presetRequestPending = false;
+                wakeUpButton.disabled = false;
+                sleepButton.disabled = false;
+                var result;
+                try {
+                    result = JSON.parse(this.responseText);
+                } catch (error) {
+                    message.textContent = label + " failed: invalid response from controller.";
+                    return;
+                }
+
+                if (this.status != 200) {
+                    message.textContent = label + " failed: " +
+                        (result.error || result.skipped || "controller returned HTTP " + this.status);
+                    return;
+                }
+                message.textContent = label + " commands sent to IDs " +
+                    (result.moved.length ? result.moved.join(", ") : "none") +
+                    (result.skipped ? ". Skipped IDs: " + result.skipped : ".");
+            };
+            xhr.onerror = function() {
+                presetRequestPending = false;
+                wakeUpButton.disabled = false;
+                sleepButton.disabled = false;
+                message.textContent = label + " failed: unable to reach the servo controller.";
+            };
+            xhr.open("POST", endpoint, true);
+            xhr.send();
+        }
 
         function toggleCheckbox(inputT, inputI, inputA, inputB) {
             var xhr = new XMLHttpRequest();
