@@ -228,6 +228,53 @@ void handleSetSpeed() {
   server.send(200, "text/plain", String(activeServoSpeed));
 }
 
+void handleReadServo1Control() {
+  getFeedBack(1);
+  getFeedBack(2);
+
+  String response = "{\"maxPosition\":";
+  response += String((int)ServoDigitalRange - 1);
+  response += ",\"servo1Position\":";
+  response += String(posRead[1]);
+  response += ",\"servo1Mode\":";
+  response += String(modeRead[1]);
+  response += ",\"servo1Ready\":";
+  response += feedbackValid[1] ? "true" : "false";
+  response += ",\"servo2Position\":";
+  response += String(posRead[2]);
+  response += ",\"servo2Ready\":";
+  response += feedbackValid[2] ? "true" : "false";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleSetServo1Position() {
+  long position;
+  if (!server.hasArg("position") ||
+      !parseUnsignedArgument(server.arg("position"), (int)ServoDigitalRange - 1, position)) {
+    server.send(400, "text/plain", "Position must be between 0 and ServoDigitalRange - 1");
+    return;
+  }
+
+  getFeedBack(1);
+  getFeedBack(2);
+  if (!feedbackValid[1] || !feedbackValid[2]) {
+    server.send(409, "text/plain", "Servo 1 or servo 2 feedback is unavailable");
+    return;
+  }
+  if (modeRead[1] != 0) {
+    server.send(409, "text/plain", "Servo 1 is not in servo mode");
+    return;
+  }
+  if (posRead[2] <= 70) {
+    server.send(409, "text/plain", "Servo 1 movement requires servo 2 position greater than 70");
+    return;
+  }
+
+  st.WritePosEx(1, (s16)position, activeServoSpeed, ServoInitACC);
+  server.send(200, "text/plain", String(position));
+}
+
 void handlePresetPositions(const s16 positions[], byte positionCount) {
   static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
   String movedIDs;
@@ -297,6 +344,8 @@ void webCtrlServer(){
     server.on("/readSTS", handleSTS);
     server.on("/readSpeed", handleReadSpeed);
     server.on("/setSpeed", HTTP_POST, handleSetSpeed);
+    server.on("/readServo1Control", handleReadServo1Control);
+    server.on("/setServo1Position", HTTP_POST, handleSetServo1Position);
     server.on("/wakeUp", HTTP_POST, handleWakeUp);
     server.on("/sleep", HTTP_POST, handleSleep);
 
