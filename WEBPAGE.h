@@ -72,6 +72,17 @@ const char index_html[] PROGMEM = R"rawliteral(
         margin: 4px 0 10px;
     }
 
+    .speed-slider-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .speed-slider-row input[type="range"] {
+        flex: 1;
+        min-width: 0;
+    }
+
     </style>
 </head>
 
@@ -89,6 +100,14 @@ const char index_html[] PROGMEM = R"rawliteral(
         <p id="wakeUpMessage" role="status" aria-live="polite"></p>
         <button class="button" id="sleepButton" type="button" onclick="sendPresetPositions('sleep', 'Sleep');">sleep</button>
         <p id="sleepMessage" role="status" aria-live="polite"></p>
+    </div>
+    <div class="control-panel">
+        <h4>Global movement speed</h4>
+        <div class="speed-slider-row">
+            <input id="speedSlider" type="range" min="0" max="1500" value="100" disabled>
+            <span id="speedValue">100</span>
+        </div>
+        <p id="speedMessage" role="status" aria-live="polite">Reading movement speed...</p>
     </div>
     <p>
         <label align="center"><button class="button" onclick="toggleCheckbox(0, 1, 0, 0);">ID Select+</button></label>
@@ -125,6 +144,90 @@ const char index_html[] PROGMEM = R"rawliteral(
     <script>
         serialForwardStatus = false;
         var presetRequestPending = false;
+        var speedInteracting = false;
+        var speedRequestPending = false;
+
+        setInterval(function() {
+            getSpeed();
+        }, 1000);
+
+        function getSpeed() {
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                if (this.status != 200) {
+                    document.getElementById("speedMessage").textContent =
+                        "Unable to read movement speed (HTTP " + this.status + ").";
+                    return;
+                }
+                try {
+                    var speed = JSON.parse(this.responseText);
+                    var slider = document.getElementById("speedSlider");
+                    slider.max = speed.maxSpeed;
+                    slider.disabled = speedRequestPending;
+                    if (!speedInteracting && !speedRequestPending) {
+                        slider.value = speed.speed;
+                        document.getElementById("speedValue").textContent = speed.speed;
+                    }
+                    document.getElementById("speedMessage").textContent =
+                        "Speed range: 0-" + speed.maxSpeed;
+                } catch (error) {
+                    document.getElementById("speedMessage").textContent =
+                        "Invalid movement speed response from controller.";
+                }
+            };
+            xhr.onerror = function() {
+                document.getElementById("speedMessage").textContent =
+                    "Unable to reach the servo controller.";
+            };
+            xhr.open("GET", "readSpeed", true);
+            xhr.send();
+        }
+
+        function setSpeed() {
+            if (speedRequestPending) {
+                return;
+            }
+            var slider = document.getElementById("speedSlider");
+            var message = document.getElementById("speedMessage");
+            speedRequestPending = true;
+            slider.disabled = true;
+            message.textContent = "Updating movement speed...";
+
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function() {
+                if (this.readyState != 4) {
+                    return;
+                }
+                speedRequestPending = false;
+                speedInteracting = false;
+                slider.disabled = false;
+                if (this.status != 200) {
+                    message.textContent = "Unable to update movement speed: " + this.responseText;
+                    getSpeed();
+                    return;
+                }
+                slider.value = this.responseText;
+                document.getElementById("speedValue").textContent = this.responseText;
+                message.textContent = "Movement speed updated.";
+            };
+            xhr.onerror = function() {
+                speedRequestPending = false;
+                speedInteracting = false;
+                slider.disabled = false;
+                message.textContent = "Unable to reach the servo controller.";
+            };
+            xhr.open("POST", "setSpeed?value=" + encodeURIComponent(slider.value), true);
+            xhr.send();
+        }
+
+        document.getElementById("speedSlider").addEventListener("input", function() {
+            speedInteracting = true;
+            document.getElementById("speedValue").textContent = this.value;
+        });
+        document.getElementById("speedSlider").addEventListener("change", setSpeed);
 
         function sendPresetPositions(endpoint, label) {
             if (presetRequestPending) {

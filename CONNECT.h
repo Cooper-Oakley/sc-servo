@@ -186,6 +186,48 @@ void handleSTS() {
   server.send(200, "text/plane", stsValue); //Send ADC value only to client ajax request
 }
 
+bool parseUnsignedArgument(const String &argument, long maxValue, long &value) {
+  if (argument.length() == 0) {
+    return false;
+  }
+
+  value = 0;
+  for (unsigned int i = 0; i < argument.length(); i++) {
+    char digit = argument.charAt(i);
+    if (digit < '0' || digit > '9') {
+      return false;
+    }
+    int numericDigit = digit - '0';
+    if (value > maxValue / 10 ||
+        (value == maxValue / 10 && numericDigit > maxValue % 10)) {
+      return false;
+    }
+    value = value * 10 + numericDigit;
+  }
+  return value <= maxValue;
+}
+
+void handleReadSpeed() {
+  String response = "{\"speed\":";
+  response += String(activeServoSpeed);
+  response += ",\"maxSpeed\":";
+  response += String(ServoMaxSpeed);
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+void handleSetSpeed() {
+  long speed;
+  if (!server.hasArg("value") ||
+      !parseUnsignedArgument(server.arg("value"), ServoMaxSpeed, speed)) {
+    server.send(400, "text/plain", "Speed must be between 0 and ServoMaxSpeed");
+    return;
+  }
+
+  activeServoSpeed = (s16)speed;
+  server.send(200, "text/plain", String(activeServoSpeed));
+}
+
 void handlePresetPositions(const s16 positions[], byte positionCount) {
   static const byte servoIDs[] = {1, 2, 3, 4, 5, 6};
   String movedIDs;
@@ -253,6 +295,8 @@ void webCtrlServer(){
     server.on("/", handleRoot);
     server.on("/readID", handleID);
     server.on("/readSTS", handleSTS);
+    server.on("/readSpeed", handleReadSpeed);
+    server.on("/setSpeed", HTTP_POST, handleSetSpeed);
     server.on("/wakeUp", HTTP_POST, handleWakeUp);
     server.on("/sleep", HTTP_POST, handleSleep);
 
